@@ -1,0 +1,110 @@
+---
+title: "qtmfinal2"
+output: html_document
+date: "2023-11-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Import the dataset
+flight_data <- read.csv("final_dataset.csv") #from Will's dataset 
+covid_data <- read.csv("covid_confirmed_usafacts.csv")
+library("anyflights")
+
+library(tidyverse)
+library(plotly)
+library(lubridate)
+library(zoo)
+library(anyflights)
+```
+
+```{r}
+#analysis 1
+
+#Create a date variable from year, month and day in flight_data.
+flight_data <- flight_data %>%
+  mutate(date = ymd(paste(year, month, day)))
+
+# Create a monthly aggregation of flight frequency
+monthly_aggregation <- flight_data %>%
+  group_by(month = format(date, "%Y-%m")) %>%
+  summarise(flight_count = n())
+
+# Create a bar plot of monthly flight frequency
+ggplot(monthly_aggregation, aes(x = month, y = flight_count)) +
+  geom_bar(stat = "identity", fill="#0b5294") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Monthly Flight Frequency at EVV (Jan 2020 - Dec 2021)",
+       x = "Month",
+       y = "Flight Frequency")
+
+#Shows us overall decrease in flight frequency throughout COVID, spike in July of 2020 could be attributed towards the state of Indiana reopening non-essential travel.
+```
+
+```{r}
+#analysis 2
+
+#Create rescale function to 24, the maximum flights per day leaving EVV.
+rescale24<-function(x) {
+  24*((x-min(x))/(max(x)-min(x)))
+}
+
+#Modify national COVID-19 data to only include Indiana, create a Date variable from date values. Create a new variable for additional new COVID cases per day, then create another one that represents a 7 day rolling average of new COVID cases. Finally create another variable, by rescaling the rolling average new cases.
+
+in_covid_data <- covid_data %>% 
+  filter(State=="IN") %>% 
+  pivot_longer(5:1269, names_to = "date", values_to = "cases") %>% 
+  group_by(date) %>% 
+  summarise(total_cases=sum(cases)) %>% 
+  separate(date, into = c("year","month","day")) %>% 
+  separate(year, into = c("remove","year"),sep=-4) %>% 
+  filter(year < 2022) %>%
+  mutate(date = make_date(year,month,day)) %>%
+  select(date, total_cases) %>% 
+  mutate(new_cases = total_cases - lag(total_cases, default = first(total_cases))) %>%
+  arrange(desc(date)) %>% 
+  mutate(new_cases_7day_average = rollmean(new_cases, k=7, fill=0, align='left')) %>% 
+  mutate(rescaled_new_cases = rescale24(new_cases_7day_average))
+
+#Generate a plot displaying flight frequency trends departing from EVV, and overlay New COVID cases per day in Indiana rescaled to 24, to compare trends.
+
+colors <- c("New COVID Cases Per Day Rescaled" = "#0b5294", "Flight Frequency" = "#1bbbe9")
+
+flight_data %>% 
+  arrange(date) %>%
+  group_by(date) %>% 
+  summarise(flight_count=n()) %>% 
+  left_join(in_covid_data, by="date") %>% 
+  ggplot(aes(x=date,y=flight_count))+geom_line(aes(color="Flight Frequency"))+geom_line(aes(y=rescaled_new_cases,color="New COVID Cases Per Day Rescaled"))+ labs(x = "Date" , y = "Flight Frequency", color = "Legend", title = "Trends in Flight Frequency from EVV (2019-2022)") + scale_color_manual(values = colors) + theme_minimal() + geom_vline(xintercept = 2020-07-22) + theme(legend.position="bottom")
+```
+
+```{r}
+#analysis 2 cont.
+
+#Plot the relationship between new COVID cases with the flight frequency.
+flight_data %>% 
+  arrange(desc(date)) %>% 
+  group_by(date) %>% 
+  summarise(flight_count=n()) %>%
+  inner_join(in_covid_data, by="date") %>%
+  separate(date, into="year",sep=-6) %>% 
+  ggplot(aes(x=new_cases,y=flight_count))+geom_point(aes(color=year))+scale_color_manual(name="Year",values = c("#0b5294" ,"#2c7ec7"))+geom_smooth(method=lm,color="#1bbbe9")+labs(title= "New COVID Cases in IN vs. EVV Flight Frequency",x="New COVID Cases Daily",y="Daily Flight Frequency")
+```
+```{r}
+flight_data %>% 
+  arrange(date) %>%
+  group_by(date) %>% 
+  summarise(flight_count=n()) %>% 
+  left_join(in_covid_data, by="date") %>% 
+  ggplot(aes(x=date,y=flight_count))+geom_line(aes(color="Flight Frequency"))+labs(x = "Date" , y = "Flight Frequency", color = "Legend", title = "Trends in Flight Frequency from EVV (2019-2022)") + scale_color_manual(values = colors) + theme_minimal() + geom_vline(xintercept = 2020-07-22) + theme(legend.position="bottom")
+
+```
+ 
+
+
+
+
+
+ 
+ 
+ 
